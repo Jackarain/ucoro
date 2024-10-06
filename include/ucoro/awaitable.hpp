@@ -427,10 +427,81 @@ namespace ucoro
 
 namespace ucoro
 {
+	struct CoroResumeBase
+	{
+		CoroResumeBase(std::coroutine_handle<> h)
+			: handle_(h)
+		{}
+
+		std::coroutine_handle<> coroutine_handle()
+		{
+			return handle_;
+		}
+
+		std::coroutine_handle<> handle_;
+	};
+
+	template <typename Awaiter>
+	struct CallbackResumeHandler : public CoroResumeBase
+	{
+		CallbackResumeHandler(Awaiter* t, std::coroutine_handle<> h)
+			: CoroResumeBase(h)
+			, this_(t)
+		{}
+
+		template<typename T>
+		void result(T t)
+		{
+			this_->result_ = std::move(t);
+		}
+
+		void operator()()
+		{}
+
+		template<typename T>
+		void operator()(T t)
+		{
+			this_->result_ = std::move(t);
+		}
+
+		Awaiter* this_;
+	};
+
+	template <typename Awaiter>
+	struct ExecutorResumeHandler : public CoroResumeBase
+	{
+		ExecutorResumeHandler(Awaiter* t, std::coroutine_handle<> h)
+			: CoroResumeBase(h)
+			, this_(t)
+		{}
+
+		template<typename T>
+		void result(T t)
+		{
+			this_->result_ = std::move(t);
+		}
+
+		void operator()()
+		{
+			handle_.resume();
+		}
+
+		template<typename T>
+		void operator()(T t)
+		{
+			this_->result_ = std::move(t);
+			handle_.resume();
+		}
+
+		Awaiter* this_;
+	};
 
 	template <typename T, typename CallbackFunction>
 	struct CallbackAwaiter
 	{
+		using CallbackAwaiterType = CallbackAwaiter<T, CallbackFunction>;
+		friend struct CallbackResumeHandler<CallbackAwaiterType>;
+
 	public:
 		explicit CallbackAwaiter(CallbackFunction &&callback_function)
 			: callback_function_(std::move(callback_function))
@@ -444,7 +515,8 @@ namespace ucoro
 
 		auto await_suspend(std::coroutine_handle<> handle)
 		{
-			callback_function_([this](T t) mutable { result_ = std::move(t); });
+			CallbackResumeHandler<CallbackAwaiterType> resume_handle(this, handle);
+			callback_function_(resume_handle);
 			return handle;
 		}
 
@@ -461,6 +533,9 @@ namespace ucoro
 	template <typename CallbackFunction>
 	struct CallbackAwaiter<void, CallbackFunction>
 	{
+		using CallbackAwaiterType = CallbackAwaiter<void, CallbackFunction>;
+		friend struct CallbackResumeHandler<CallbackAwaiterType>;
+
 	public:
 		explicit CallbackAwaiter(CallbackFunction &&callback_function)
 			: callback_function_(std::move(callback_function))
@@ -474,7 +549,8 @@ namespace ucoro
 
 		auto await_suspend(std::coroutine_handle<> handle)
 		{
-			callback_function_([]() {});
+			CallbackResumeHandler<CallbackAwaiterType> resume_handle(this, handle);
+			callback_function_(resume_handle);
 			return handle;
 		}
 
@@ -491,6 +567,9 @@ namespace ucoro
 	template <typename T, typename CallbackFunction>
 	struct ExecutorAwaiter
 	{
+		using ExecutorAwaiterType = ExecutorAwaiter<T, CallbackFunction>;
+		friend struct ExecutorResumeHandler<ExecutorAwaiterType>;
+
 	public:
 		explicit ExecutorAwaiter(CallbackFunction &&callback_function)
 			: callback_function_(std::move(callback_function))
@@ -504,11 +583,8 @@ namespace ucoro
 
 		void await_suspend(std::coroutine_handle<> handle)
 		{
-			callback_function_([handle = std::move(handle), this](T t) mutable
-			{
-				result_ = std::move(t);
-				handle.resume();
-			});
+			ExecutorResumeHandler<ExecutorAwaiterType> resume_handle(this, handle);
+			callback_function_(resume_handle);
 		}
 
 		T await_resume() noexcept
@@ -524,6 +600,9 @@ namespace ucoro
 	template <typename CallbackFunction>
 	struct ExecutorAwaiter<void, CallbackFunction> : std::suspend_always
 	{
+		using ExecutorAwaiterType = ExecutorAwaiter<void, CallbackFunction>;
+		friend struct ExecutorResumeHandler<ExecutorAwaiterType>;
+
 	public:
 		explicit ExecutorAwaiter(CallbackFunction &&callback_function)
 			: callback_function_(std::move(callback_function))
@@ -532,7 +611,8 @@ namespace ucoro
 
 		void await_suspend(std::coroutine_handle<> handle)
 		{
-			callback_function_(handle);
+			ExecutorResumeHandler<ExecutorAwaiterType> resume_handle(this, handle);
+			callback_function_(resume_handle);
 		}
 
 	private:
