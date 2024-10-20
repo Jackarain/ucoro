@@ -253,7 +253,7 @@ namespace ucoro
 	template<typename T>
 	struct final_awaitable : std::suspend_always
 	{
-		std::coroutine_handle<> await_suspend(std::coroutine_handle<awaitable_promise<T>> h) noexcept
+		std::coroutine_handle<> await_suspend(std::coroutine_handle<awaitable_promise<T>> h)
 		{
 			if (h.promise().continuation_)
 			{
@@ -284,7 +284,7 @@ namespace ucoro
 	{
 		awaitable<T> get_return_object();
 
-		auto final_suspend() noexcept
+		auto final_suspend()
 		{
 			return final_awaitable<T>{};
 		}

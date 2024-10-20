@@ -1,6 +1,7 @@
 #include <iostream>
 #include "ucoro/awaitable.hpp"
 
+/*
 
 ucoro::awaitable<int> coro_compute_int(int value)
 {
@@ -41,12 +42,50 @@ ucoro::awaitable<void> coro_compute()
 		co_await coro_compute_exec(i);
 	}
 }
+*/
+
+ucoro::awaitable<int> foo()
+{
+	throw std::runtime_error("test");
+	co_return 1;
+}
+
+ucoro::awaitable<int> bar()
+{
+	int res;
+	res = co_await foo();
+	assert(false); // 不会执行，因为上一行会抛出异常。
+
+	co_return res;
+}
+
+ucoro::awaitable<int> baz()
+{
+	co_return co_await bar();
+}
+
+ucoro::awaitable<int> coro_compute()
+{
+	co_return co_await bar();
+// 	for (auto i = 0; i < 100; i++)
+// 	{
+// 		co_await coro_compute_exec(i);
+// 	}
+}
+
+void normal() {
+	try {
+		std::string str = "hello";
+		coro_start(coro_compute(), str);
+	}
+	catch (...) {
+		// 我们可以在这里捕获到异常。
+	}
+}
+
 
 int main(int argc, char **argv)
 {
-	std::string str = "hello";
-
-	coro_start(coro_compute(), str);
-
+	normal();
 	return 0;
 }
